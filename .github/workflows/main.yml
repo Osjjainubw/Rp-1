@@ -14,10 +14,6 @@ on:
         description: "How long to keep the session alive (minutes)"
         required: false
         default: "330"
-      BOT_ZIP_URL:
-        description: "Direct link to your Bot.zip (Downloads\\Bot target)"
-        required: false
-        default: ""
       RDP_PASSWORD:
         description: "Password for runneradmin if not provided via secret"
         required: false
@@ -41,13 +37,9 @@ jobs:
 
     env:
       RDP_PASSWORD_SECRET: ${{ secrets.RDP_PASSWORD }}
-      BOT_ZIP_URL_SECRET: ${{ secrets.BOT_ZIP_URL }}
 
       HOLD_MINUTES_INPUT: ${{ github.event.inputs.HOLD_MINUTES }}
-      BOT_ZIP_URL_INPUT: ${{ github.event.inputs.BOT_ZIP_URL }}
       RDP_PASSWORD_INPUT: ${{ github.event.inputs.RDP_PASSWORD }}
-
-      BOT_ZIP_URL_DEFAULT: "https://www.dropbox.com/scl/fi/cuppnpampdzvwgfdyx5bp/BOT.zip?rlkey=nsxqoykrxonm6285se94n6zo6&st=fyojo1xv&dl=1"
 
       BORE_PORT_INPUT: ${{ github.event.inputs.BORE_PORT }}
       BORE_SERVER_INPUT: ${{ github.event.inputs.BORE_SERVER }}
@@ -75,11 +67,6 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($rdp)) { $rdp = $env:RDP_PASSWORD_INPUT }
           if ([string]::IsNullOrWhiteSpace($rdp)) { $rdp = "P@ssw0rd!" }
 
-          # --- Bot URL: secret > input > hard default ---
-          $botUrl = $env:BOT_ZIP_URL_SECRET
-          if ([string]::IsNullOrWhiteSpace($botUrl)) { $botUrl = $env:BOT_ZIP_URL_INPUT }
-          if ([string]::IsNullOrWhiteSpace($botUrl)) { $botUrl = $env:BOT_ZIP_URL_DEFAULT }
-
           # --- Bore server and port ---
           $boreServer = $env:BORE_SERVER_INPUT
           if ([string]::IsNullOrWhiteSpace($boreServer)) { $boreServer = "bore.pub" }
@@ -88,13 +75,11 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($borePort)) { $borePort = "0" }
 
           Write-Host "Effective Hold (min): $hold"
-          Write-Host "Effective Bot URL   : $botUrl"
           Write-Host "Bore server         : $boreServer"
           Write-Host "Bore port           : $borePort"
 
           "EffectiveHoldMinutes=$hold"        | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "EffectiveRdpPassword=$rdp"         | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "EffectiveBotUrl=$botUrl"           | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "EffectiveBoreServer=$boreServer"   | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "EffectiveBorePort=$borePort"       | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
@@ -186,69 +171,16 @@ jobs:
           winget install -e --id OBSProject.OBSStudio --disable-interactivity --accept-source-agreements --accept-package-agreements
           Write-Host "OBS Studio installed."
 
-      - name: Prepare Bot base directory
+      - name: Clone bot repo to Downloads\Bot
         shell: pwsh
-        run: |
-          $downloads = "C:\Users\runneradmin\Downloads"
-          $BOT_BASE = Join-Path $downloads "Bot"
-          New-Item -ItemType Directory -Force -Path $downloads | Out-Null
-          New-Item -ItemType Directory -Force -Path $BOT_BASE | Out-Null
-          Write-Host "Created $BOT_BASE"
-
-      - name: Download and extract Bot to C:\Users\runneradmin\Downloads\Bot
-        shell: pwsh
-        env:
-          EFFECTIVE_BOT_URL: ${{ steps.resolve.outputs.EffectiveBotUrl }}
         run: |
           $ErrorActionPreference = 'Stop'
-          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-          $downloads = "C:\Users\runneradmin\Downloads"
-          $BOT_BASE = Join-Path $downloads "Bot"
-          $tmp = Join-Path $env:TEMP ('botdl_' + [guid]::NewGuid())
-          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-
-          function Invoke-WithRetry([string]$url, [string]$outFile, [int]$retries = 3, [int]$delay = 5) {
-            for ($i = 1; $i -le $retries; $i++) {
-              try {
-                Write-Host ("Downloading (attempt {0}/{1}) from {2}" -f $i, $retries, $url)
-                Invoke-WebRequest -Uri $url -OutFile $outFile -UseBasicParsing -TimeoutSec 120
-                return
-              } catch {
-                Write-Host ("Download failed: {0}" -f $_.Exception.Message)
-                if ($i -lt $retries) { Start-Sleep -Seconds $delay }
-              }
-            }
-            throw "Failed to download after $retries attempts: $url"
-          }
-
-          try {
-            $zipPath = Join-Path $tmp 'bot.zip'
-            if ([string]::IsNullOrWhiteSpace($env:EFFECTIVE_BOT_URL)) {
-              throw "Effective bot URL is empty. Provide BOT_ZIP_URL input or secret."
-            }
-            Invoke-WithRetry -url $env:EFFECTIVE_BOT_URL -outFile $zipPath
-
-            $extract = Join-Path $tmp 'unzipped'
-            Expand-Archive -Path $zipPath -DestinationPath $extract -Force
-
-            $candidates = @(
-              (Join-Path $extract 'Bot'),
-              (Join-Path $extract 'bot')
-            ) | Where-Object { Test-Path $_ }
-
-            if ($candidates.Count -gt 0) {
-              $root = $candidates[0]
-              Write-Host ("Found root folder in archive: {0}" -f $root)
-              Copy-Item -Path (Join-Path $root '*') -Destination $BOT_BASE -Recurse -Force
-            } else {
-              Write-Host "No root 'Bot' folder; copying all extracted files into BOT_BASE"
-              Copy-Item -Path (Join-Path $extract '*') -Destination $BOT_BASE -Recurse -Force
-            }
-          }
-          finally {
-            try { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue } catch {}
-          }
+          $dest = "C:\Users\runneradmin\Downloads\Bot"
+          New-Item -ItemType Directory -Force -Path "C:\Users\runneradmin\Downloads" | Out-Null
+          Write-Host "Cloning bot-farm-dashboard into $dest ..."
+          git clone https://github.com/osox155/bot-farm-dashboard.git $dest
+          Write-Host "Clone complete. Contents:"
+          Get-ChildItem $dest | Select-Object -ExpandProperty Name
 
       - name: Launch bots (start-bots.bat) in background
         shell: pwsh
