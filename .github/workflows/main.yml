@@ -233,22 +233,22 @@ jobs:
       - name: Start auto-pull watcher (background)
         shell: pwsh
         run: |
-          $script = @'
-          $botBase = "C:\Users\runneradmin\Downloads\Bot"
-          while ($true) {
-            Start-Sleep -Seconds 60
-            try {
-              $result = & git -C $botBase pull 2>&1
-              $out = $result -join " "
-              if ($out -notmatch "Already up to date") {
-                $ts = (Get-Date).ToString("HH:mm:ss")
-                Write-Host "[$ts] auto-pull: $out"
-              }
-            } catch {}
-          }
-'@
+          $scriptContent = @(
+            '$botBase = "C:\Users\runneradmin\Downloads\Bot"',
+            'while ($true) {',
+            '  Start-Sleep -Seconds 60',
+            '  try {',
+            '    $result = & git -C $botBase pull 2>&1',
+            '    $out = $result -join " "',
+            '    if ($out -notmatch "Already up to date") {',
+            '      $ts = (Get-Date).ToString("HH:mm:ss")',
+            '      Write-Host "[$ts] auto-pull: $out"',
+            '    }',
+            '  } catch {}',
+            '}'
+          ) -join "`n"
           $scriptPath = "C:\Users\runneradmin\Downloads\auto-pull.ps1"
-          $script | Out-File -FilePath $scriptPath -Encoding utf8 -Force
+          [System.IO.File]::WriteAllText($scriptPath, $scriptContent)
           Start-Process powershell -ArgumentList "-NonInteractive -WindowStyle Hidden -File `"$scriptPath`"" -WindowStyle Hidden
           Write-Host "Auto-pull watcher started (checks GitHub every 60s)."
 
