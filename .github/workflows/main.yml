@@ -201,6 +201,18 @@ jobs:
           [System.IO.File]::WriteAllBytes("$botBase\ReplyBotv7\service_account.json", $bytes)
           Write-Host "service_account.json written."
 
+          # Create accounts directory with stub cookie files for each account in the
+          # rotation pool (2, 3, 4). Real cookies are fetched from Google Sheets by
+          # run_account() on startup — stubs just need to exist so get_account_files()
+          # can list them without crashing.
+          $accountsDir = "$botBase\ReplyBotv7\accounts"
+          New-Item -ItemType Directory -Force -Path $accountsDir | Out-Null
+          foreach ($n in @(2, 3, 4)) {
+            $stub = "$accountsDir\${n}_cookies.json"
+            if (-not (Test-Path $stub)) { '[]' | Out-File -FilePath $stub -Encoding utf8 -Force }
+          }
+          Write-Host "accounts/ directory and stub cookie files (2,3,4) created."
+
       - name: Install Python dependencies for all bots
         shell: pwsh
         run: |
@@ -217,6 +229,28 @@ jobs:
             pip install -r $req.FullName --quiet
           }
           Write-Host "All Python dependencies installed."
+
+      - name: Start auto-pull watcher (background)
+        shell: pwsh
+        run: |
+          $script = @'
+          $botBase = "C:\Users\runneradmin\Downloads\Bot"
+          while ($true) {
+            Start-Sleep -Seconds 60
+            try {
+              $result = & git -C $botBase pull 2>&1
+              $out = $result -join " "
+              if ($out -notmatch "Already up to date") {
+                $ts = (Get-Date).ToString("HH:mm:ss")
+                Write-Host "[$ts] auto-pull: $out"
+              }
+            } catch {}
+          }
+'@
+          $scriptPath = "C:\Users\runneradmin\Downloads\auto-pull.ps1"
+          $script | Out-File -FilePath $scriptPath -Encoding utf8 -Force
+          Start-Process powershell -ArgumentList "-NonInteractive -WindowStyle Hidden -File `"$scriptPath`"" -WindowStyle Hidden
+          Write-Host "Auto-pull watcher started (checks GitHub every 60s)."
 
       - name: Launch bots (start-bots.bat) in background
         shell: pwsh
