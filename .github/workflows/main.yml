@@ -178,7 +178,12 @@ jobs:
           $dest = "C:\Users\runneradmin\Downloads\Bot"
           New-Item -ItemType Directory -Force -Path "C:\Users\runneradmin\Downloads" | Out-Null
           Write-Host "Cloning bot-farm-dashboard into $dest ..."
-          git clone https://github.com/osox155/bot-farm-dashboard.git $dest
+          # Use PAT in URL so git push works without interactive auth
+          $pat = "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"
+          git clone "https://${pat}@github.com/osox155/bot-farm-dashboard.git" $dest
+          # Store credentials so background watcher can push without prompts
+          git -C $dest config user.email "bot-runner@rdp"
+          git -C $dest config user.name "RDP Bot Runner"
           Write-Host "Clone complete. Contents:"
           Get-ChildItem $dest | Select-Object -ExpandProperty Name
 
@@ -238,11 +243,21 @@ jobs:
             'while ($true) {',
             '  Start-Sleep -Seconds 60',
             '  try {',
-            '    $result = & git -C $botBase pull 2>&1',
-            '    $out = $result -join " "',
-            '    if ($out -notmatch "Already up to date") {',
+            '    # Pull changes from GitHub',
+            '    $pull = & git -C $botBase pull 2>&1',
+            '    $pullOut = $pull -join " "',
+            '    if ($pullOut -notmatch "Already up to date") {',
             '      $ts = (Get-Date).ToString("HH:mm:ss")',
-            '      Write-Host "[$ts] auto-pull: $out"',
+            '      Write-Host "[$ts] auto-pull: $pullOut"',
+            '    }',
+            '    # Push any local changes made in the RDP session',
+            '    $status = & git -C $botBase status --porcelain 2>&1',
+            '    if ($status) {',
+            '      $ts = (Get-Date).ToString("HH:mm:ss")',
+            '      & git -C $botBase add -A 2>&1 | Out-Null',
+            '      & git -C $botBase commit -m "[$ts] RDP auto-save" 2>&1 | Out-Null',
+            '      $push = & git -C $botBase push 2>&1',
+            '      Write-Host "[$ts] auto-push: $($push -join " ")"',
             '    }',
             '  } catch {}',
             '}'
@@ -250,7 +265,7 @@ jobs:
           $scriptPath = "C:\Users\runneradmin\Downloads\auto-pull.ps1"
           [System.IO.File]::WriteAllText($scriptPath, $scriptContent)
           Start-Process powershell -ArgumentList "-NonInteractive -WindowStyle Hidden -File `"$scriptPath`"" -WindowStyle Hidden
-          Write-Host "Auto-pull watcher started (checks GitHub every 60s)."
+          Write-Host "Auto pull+push watcher started (syncs GitHub every 60s)."
 
       - name: Launch bots (start-bots.bat) in background
         shell: pwsh
