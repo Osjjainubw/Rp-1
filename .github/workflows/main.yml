@@ -182,6 +182,23 @@ jobs:
           Write-Host "Clone complete. Contents:"
           Get-ChildItem $dest | Select-Object -ExpandProperty Name
 
+      - name: Install Python dependencies for all bots
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $botBase = "C:\Users\runneradmin\Downloads\Bot"
+
+          Write-Host "Upgrading pip..."
+          python -m pip install --upgrade pip --quiet
+
+          # Install from every requirements.txt found under the Bot folder
+          $reqs = Get-ChildItem -Path $botBase -Filter "requirements.txt" -Recurse -File
+          foreach ($req in $reqs) {
+            Write-Host "Installing from $($req.FullName)..."
+            pip install -r $req.FullName --quiet
+          }
+          Write-Host "All Python dependencies installed."
+
       - name: Launch bots (start-bots.bat) in background
         shell: pwsh
         run: |
