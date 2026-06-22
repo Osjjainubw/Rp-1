@@ -227,6 +227,10 @@ jobs:
           Write-Host "Upgrading pip..."
           python -m pip install --upgrade pip --quiet
 
+          # Core dashboard dependency (not in requirements.txt but always needed)
+          pip install bottle Pillow --quiet
+          Write-Host "bottle + Pillow installed."
+
           # Install from every requirements.txt found under the Bot folder
           $reqs = Get-ChildItem -Path $botBase -Filter "requirements.txt" -Recurse -File
           foreach ($req in $reqs) {
